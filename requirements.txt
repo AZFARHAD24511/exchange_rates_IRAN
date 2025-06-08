@@ -1,0 +1,7 @@
+streamlit
+requests
+pandas
+matplotlib
+arabic-reshaper
+python-bidi
+statsmodels
