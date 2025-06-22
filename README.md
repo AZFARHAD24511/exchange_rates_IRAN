@@ -5,5 +5,5 @@ In this project, I extracted currency exchange rate data from tgju.org and visua
 The goal is to provide a clear and insightful view for researchers, economists, and those interested in economic trends to better understand the impact of macroeconomic policies on currency rates.
 
 # run the propgram below
-https://exchangeratesusd-f5vjqgp2mm62p6z5whr99t.streamlit.app/
+https://exchangeratesusd-8rilbsch3nm6azbxeeqzn8.streamlit.app/
 
