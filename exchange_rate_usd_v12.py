@@ -105,6 +105,13 @@ try:
         today_str = datetime.now().strftime('%Y%m%d')
         os.makedirs('data', exist_ok=True)
         combined_df.to_csv(f'data/usd_data_{today_str}.csv')
+        csv_data = combined_df.to_csv(index=True).encode('utf-8')
+        st.download_button(
+            label="📥 دانلود داده‌های پردازش‌شده (CSV)",
+            data=csv_data,
+            file_name=f'usd_data_{today_str}.csv',
+            mime='text/csv'
+        )
 
         # محاسبه اختلاف قیمت و نسبت اختلاف
         combined_df['price_gap'] = combined_df['price_azad'] - combined_df['price_nima']
