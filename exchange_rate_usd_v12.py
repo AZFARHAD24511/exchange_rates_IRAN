@@ -12,6 +12,12 @@ from statsmodels.tsa.vector_ar.vecm import coint_johansen
 
 # تنظیم صفحه Streamlit
 st.set_page_config(page_title="نرخ دلار آزاد و نیما", layout="wide")
+st.markdown("""
+---
+This application was developed by Dr. Farhadi.  
+For more information, please visit the project's [GitHub repository](https://github.com/AZFARHAD24511/exchange_rates_IRAN).
+---
+""")
 
 # تابع نمایش صحیح متن فارسی برای matplotlib
 def _(text):
