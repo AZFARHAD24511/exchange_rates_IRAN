@@ -14,10 +14,11 @@ from statsmodels.tsa.vector_ar.vecm import coint_johansen
 st.set_page_config(page_title="نرخ دلار آزاد و نیما", layout="wide")
 st.markdown("""
 ---
-This application was developed by Dr. Farhadi.  
-For more information, please visit the project's [GitHub repository](https://github.com/AZFARHAD24511/exchange_rates_IRAN).
----
+© 2025 Dr. Farhadi. All rights reserved.  
+This application was developed by **Dr. Farhadi**, Ph.D. in *Economics (Econometrics)* and *Data Science*.  
+All trademarks and intellectual property are protected. ™
 """)
+
 
 # تابع نمایش صحیح متن فارسی برای matplotlib
 def _(text):
