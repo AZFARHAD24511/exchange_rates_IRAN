@@ -10,7 +10,8 @@ import matplotlib.pyplot as plt
 from pytrends.request import TrendReq
 import math
 
-# 1. تابع اسکرپ قیمت دلار از API\class CurrencyScraper:
+# 1. تابع اسکرپ قیمت دلار از API
+class CurrencyScraper:
     currencies_dict = {
         'USD_Azad': 'price_dollar_rl',
         'USD_Nima': 'nima_buy_usd'
@@ -19,9 +20,13 @@ import math
 
     @staticmethod
     def clean_price(price_str: str) -> float:
-        return float(price_str.replace('<span class="high" dir="ltr">', '')
-                             .replace('<span class="low" dir="ltr">', '')
-                             .replace('</span>', '').replace(',', ''))
+        return float(
+            price_str
+            .replace('<span class="high" dir="ltr">', '')
+            .replace('<span class="low" dir="ltr">', '')
+            .replace('</span>', '')
+            .replace(',', '')
+        )
 
     def scrape(self, code_key: str) -> pd.DataFrame:
         code = self.currencies_dict[code_key]
@@ -35,13 +40,19 @@ import math
                 price = self.clean_price(row[0])
                 date = datetime.strptime(row[6], '%Y/%m/%d')
                 records.append((date, price))
-            except:
+            except Exception:
                 continue
         df = pd.DataFrame(records, columns=['date', 'price']).set_index('date').sort_index()
         return df
 
 # 2. تابع دریافت Google Trends
-def fetch_trends(term: str, start: datetime, end: datetime, geo: str = 'IR') -> pd.DataFrame:
+
+def fetch_trends(
+    term: str,
+    start: datetime,
+    end: datetime,
+    geo: str = 'IR'
+) -> pd.DataFrame:
     py = TrendReq(hl='fa', tz=+210)
     timeframe = f"{start.strftime('%Y-%m-%d')} {end.strftime('%Y-%m-%d')}"
     py.build_payload([term], timeframe=timeframe, geo=geo)
@@ -60,18 +71,21 @@ def main():
 
     # ب) ترکیب دو سری
     df = pd.merge(
-        df_azad, df_nima,
-        left_index=True, right_index=True,
-        suffixes=('_azad', '_nima'), how='inner'
+        df_azad,
+        df_nima,
+        left_index=True,
+        right_index=True,
+        suffixes=('_azad', '_nima'),
+        how='inner'
     )
 
     # ج) بازه زمانی برای ترند
-    start, end = df.index.min(), df.index.max() + timedelta(days=1)
-    trends = fetch_trends('دلار فردایی', start, end)
+    start_date = df.index.min()
+    end_date = df.index.max() + timedelta(days=1)
+    trends = fetch_trends('دلار فردایی', start_date, end_date)
 
     # د) ترکیب با ترند
     data = df.join(trends, how='inner').dropna()
-
     if data.empty:
         print("No overlapping data between rates and trends.")
         return
@@ -79,8 +93,10 @@ def main():
     # ه) تقسیم train/test
     series = data['price_azad']
     exog = data[['trend']]
-    train_s, test_s = series.iloc[:-1], series.iloc[-1:]
-    train_x, test_x = exog.iloc[:-1], exog.iloc[-1:]
+    train_s = series.iloc[:-1]
+    test_s = series.iloc[-1:]
+    train_x = exog.iloc[:-1]
+    test_x = exog.iloc[-1:]
 
     # و) مدل SARIMAX
     model = SARIMAX(
@@ -97,7 +113,7 @@ def main():
     y_pred = pred.predicted_mean.iloc[0]
     y_true = test_s.iloc[0]
 
-    # محاسبه RMSE بدون آرگومان مربعشده
+    # محاسبه RMSE
     mse = mean_squared_error([y_true], [y_pred])
     rmse = math.sqrt(mse)
 
