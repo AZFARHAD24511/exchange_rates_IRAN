@@ -9,53 +9,70 @@ from datetime import datetime, timedelta
 from io import StringIO
 from pytrends.request import TrendReq
 from pmdarima import auto_arima
-import os
+import math
 
 # پیکربندی صفحه
 st.set_page_config(page_title="پیش‌بینی نرخ دلار آزاد", layout="centered")
-st.title("📈 پیش‌بینی نرخ دلار آزاد با داده‌های گوگل ترندز")
+st.title("📈 پیش‌بینی نرخ دلار آزاد با داده‌های گوگل ترندز و ARIMA")
 
-# آدرس فایل ترندز در گیتهاب
-GITHUB_TRENDS_CSV_URL = 'https://raw.githubusercontent.com/AZFARHAD24511/exchange_rates_IRAN/main/predict/google_trends_daily.csv'
-KEYWORDS = ['خرید دلار', 'فروش دلار']
+# آدرس فایل ترندز در GitHub
+GITHUB_TRENDS_CSV_URL = (
+    'https://raw.githubusercontent.com/AZFARHAD24511/exchange_rates_IRAN/main/'
+    'predict/google_trends_daily.csv'
+)
+KEYWORDS = ['خرید دلار', 'فروش دلار', 'دلار فردایی']
 
-# بارگذاری داده‌های دلار آزاد
-@st.cache_data
+# بارگذاری داده‌های دلار آزاد از API
+@st.cache_data(ttl=3600)
 def load_usd_data():
     ts = int(datetime.now().timestamp() * 1000)
-    url = f"https://api.tgju.org/v1/market/indicator/summary-table-data/price_dollar_rl?period=all&mode=full&ts={ts}"
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    r = requests.get(url, headers=headers)
-    data = r.json()['data']
+    url = (
+        f"https://api.tgju.org/v1/market/indicator/"
+        f"summary-table-data/price_dollar_rl?period=all&mode=full&ts={ts}"
+    )
+    r = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+    data = r.json().get('data', [])
     records = []
     for row in data:
         try:
-            price = float(row[0].replace(',', '').replace('<span class="high" dir="ltr">', '').replace('</span>', ''))
+            price = float(
+                row[0]
+                .replace(',', '')
+                .replace('<span class="high" dir="ltr">', '')
+                .replace('</span>', '')
+            )
             date = datetime.strptime(row[6], "%Y/%m/%d")
             records.append({'date': date, 'price': price})
         except:
             continue
-    df = pd.DataFrame(records).dropna()
+    df = pd.DataFrame(records)
     df = df.set_index('date').sort_index()
     return df
 
-# بارگذاری ترندز از گیتهاب
-@st.cache_data
+# بارگذاری داده‌های Google Trends از GitHub
+@st.cache_data(ttl=3600)
 def load_trends_csv():
     r = requests.get(GITHUB_TRENDS_CSV_URL)
-    return pd.read_csv(StringIO(r.text), parse_dates=['date']).set_index('date')
+    df = pd.read_csv(StringIO(r.text), parse_dates=['date'])
+    return df.set_index('date').sort_index()
 
-# گرفتن داده‌های ناقص از گوگل ترندز
+# تابع برای گرفتن داده‌های ناقص از Google Trends (برای missing dates)
+@st.cache_data(ttl=3600)
 def fetch_missing_trends(missing_dates, geo='IR'):
     pytrends = TrendReq(hl='fa', tz=330)
     df_all = []
+    start = missing_dates.min()
+    end = missing_dates.max()
+    timeframe = f"{start.strftime('%Y-%m-%d')} {end.strftime('%Y-%m-%d')}"
     for keyword in KEYWORDS:
-        pytrends.build_payload([keyword], timeframe=f"{missing_dates.min().strftime('%Y-%m-%d')} {missing_dates.max().strftime('%Y-%m-%d')}", geo=geo)
-        trend_data = pytrends.interest_over_time()
-        if not trend_data.empty:
-            df_all.append(trend_data[keyword])
+        pytrends.build_payload([keyword], timeframe=timeframe, geo=geo)
+        tdf = pytrends.interest_over_time()
+        if not tdf.empty:
+            df_all.append(tdf[keyword].rename(keyword))
     if df_all:
-        return pd.concat(df_all, axis=1).loc[missing_dates]
+        df_new = pd.concat(df_all, axis=1).loc[missing_dates]
+        # نرمال‌سازی هر ستون به مقیاس 0-100
+        return df_new.apply(lambda x: x / x.max() * 100)
     else:
         return pd.DataFrame(index=missing_dates)
 
@@ -64,47 +81,59 @@ with st.spinner("در حال بارگذاری داده‌ها..."):
     usd_df = load_usd_data()
     trends_df = load_trends_csv()
 
-# فیلتر 2 سال آخر
+# استفاده از 2 سال اخیر
 two_years_ago = datetime.now() - timedelta(days=730)
 usd_df = usd_df[usd_df.index >= two_years_ago]
 trends_df = trends_df[trends_df.index >= two_years_ago]
 
-# بررسی تاریخ‌های ناقص
+# یافتن تاریخ‌های ناقص
 missing_dates = usd_df.index.difference(trends_df.index)
-
-# گرفتن داده‌های جدید از ترندز در صورت نیاز
+# پر کردن ناقص‌ها
 if not missing_dates.empty:
     new_trends = fetch_missing_trends(missing_dates)
     trends_df = pd.concat([trends_df, new_trends]).sort_index()
+    trends_df = trends_df.reindex(usd_df.index).ffill().bfill()
 
 # ادغام داده‌ها
-combined_df = pd.merge(usd_df, trends_df, left_index=True, right_index=True, how='inner')
+combined_df = pd.merge(
+    usd_df, trends_df, left_index=True, right_index=True, how='inner'
+)
 combined_df = combined_df.ffill().bfill()
 
-# مدل ARIMA فقط روی قیمت دلار
-model_data = combined_df['price']
+# سری قیمت دلار (برای مدل)
+price_series = combined_df['price']
 
-# آموزش مدل و پیش‌بینی یک روز آینده
-model = auto_arima(model_data, seasonal=False, suppress_warnings=True)
-forecast = model.predict(n_periods=1)
-forecast_date = model_data.index[-1] + timedelta(days=1)
-forecast_value = forecast[0]
+# مدل ARIMA و پیش‌بینی دو روز آینده
+model = auto_arima(price_series, seasonal=False, suppress_warnings=True)
+forecast = model.predict(n_periods=2)
+forecast_dates = [price_series.index[-1] + timedelta(days=i) for i in range(1, 3)]
+forecast_vals = list(forecast)
 
-# نمایش نتایج
-st.subheader("📊 نمودار نرخ دلار آزاد و پیش‌بینی یک روز آینده")
+# نمایش نمودار
+st.subheader("📊 Historical Data & 2-Day Forecast")
 fig, ax = plt.subplots(figsize=(12, 6))
-ax.plot(model_data.index, model_data, label="داده‌های واقعی")
-ax.axvline(model_data.index[-1], color='gray', linestyle='--')
-ax.scatter(forecast_date, forecast_value, color='red', label="پیش‌بینی")
-ax.annotate(f'{forecast_value:,.0f} تومان\n{forecast_date.date()}', 
-            xy=(forecast_date, forecast_value),
-            xytext=(-60, 30), textcoords='offset points',
-            arrowprops=dict(arrowstyle='->', color='red'),
-            fontsize=10, bbox=dict(boxstyle='round', fc='yellow', alpha=0.5))
-ax.set_title("پیش‌بینی نرخ دلار آزاد")
-ax.legend()
+# داده‌های تاریخی
+ax.plot(price_series.index, price_series.values, label='Historical Price', color='blue')
+# خط جداکننده
+ax.axvline(price_series.index[-1], color='gray', linestyle='--')
+# نقاط پیش‌بینی
+for i, (d, v) in enumerate(zip(forecast_dates, forecast_vals), start=1):
+    ax.scatter(d, v, color='red')
+    ax.annotate(
+        f'Day+{i}: {v:,.0f}',
+        xy=(d, v), xytext=(0, 10), textcoords='offset points',
+        ha='center', fontsize=9,
+        arrowprops=dict(arrowstyle='->', color='red')
+    )
+ax.set_title('USD Free Market Rate Forecast')
+ax.legend(['Historical', 'Threshold'] + [f'Forecast Day+{i}' for i in (1,2)])
 ax.grid(True)
 st.pyplot(fig)
 
-# نمایش مقدار پیش‌بینی
-st.success(f"🔮 پیش‌بینی نرخ دلار آزاد برای {forecast_date.date()} برابر است با: **{forecast_value:,.0f} تومان**")
+# نمایش نتایج عددی
+st.success(
+    f"🔮 Forecast for {forecast_dates[0].date()}: {forecast_vals[0]:,.0f}"
+)
+st.success(
+    f"🔮 Forecast for {forecast_dates[1].date()}: {forecast_vals[1]:,.0f}"
+)
