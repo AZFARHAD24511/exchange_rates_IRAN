@@ -8,9 +8,9 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 from sklearn.metrics import mean_squared_error
 import matplotlib.pyplot as plt
 from pytrends.request import TrendReq
+import math
 
-# 1. تابع اسکرپ قیمت دلار از API
-class CurrencyScraper:
+# 1. تابع اسکرپ قیمت دلار از API\class CurrencyScraper:
     currencies_dict = {
         'USD_Azad': 'price_dollar_rl',
         'USD_Nima': 'nima_buy_usd'
@@ -28,7 +28,7 @@ class CurrencyScraper:
         ts = int(datetime.now().timestamp() * 1000)
         url = f"{self.api_base_url}{code}?period=all&mode=full&ts={ts}"
         r = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
-        data = r.json()['data']
+        data = r.json().get('data', [])
         records = []
         for row in data:
             try:
@@ -37,7 +37,7 @@ class CurrencyScraper:
                 records.append((date, price))
             except:
                 continue
-        df = pd.DataFrame(records, columns=['date','price']).set_index('date').sort_index()
+        df = pd.DataFrame(records, columns=['date', 'price']).set_index('date').sort_index()
         return df
 
 # 2. تابع دریافت Google Trends
@@ -45,9 +45,12 @@ def fetch_trends(term: str, start: datetime, end: datetime, geo: str = 'IR') -> 
     py = TrendReq(hl='fa', tz=+210)
     timeframe = f"{start.strftime('%Y-%m-%d')} {end.strftime('%Y-%m-%d')}"
     py.build_payload([term], timeframe=timeframe, geo=geo)
-    df = py.interest_over_time().drop(columns=['isPartial'])
+    df = py.interest_over_time()
+    if 'isPartial' in df.columns:
+        df = df.drop(columns=['isPartial'])
     df.index = df.index.tz_localize(None)
     return df.rename(columns={term: 'trend'})
+
 
 def main():
     # الف) اسکرپ دو سری دلار
@@ -56,11 +59,14 @@ def main():
     df_nima = scraper.scrape('USD_Nima')
 
     # ب) ترکیب دو سری
-    df = pd.merge(df_azad, df_nima, left_index=True, right_index=True,
-                  suffixes=('_azad','_nima'), how='inner')
+    df = pd.merge(
+        df_azad, df_nima,
+        left_index=True, right_index=True,
+        suffixes=('_azad', '_nima'), how='inner'
+    )
 
     # ج) بازه زمانی برای ترند
-    start, end = df.index.min(), df.index.max()+timedelta(days=1)
+    start, end = df.index.min(), df.index.max() + timedelta(days=1)
     trends = fetch_trends('دلار فردایی', start, end)
 
     # د) ترکیب با ترند
@@ -72,20 +78,28 @@ def main():
 
     # ه) تقسیم train/test
     series = data['price_azad']
-    exog  = data[['trend']]
+    exog = data[['trend']]
     train_s, test_s = series.iloc[:-1], series.iloc[-1:]
     train_x, test_x = exog.iloc[:-1], exog.iloc[-1:]
 
     # و) مدل SARIMAX
-    model = SARIMAX(train_s, exog=train_x, order=(1,1,1),
-                    enforce_stationarity=False, enforce_invertibility=False)
+    model = SARIMAX(
+        train_s,
+        exog=train_x,
+        order=(1, 1, 1),
+        enforce_stationarity=False,
+        enforce_invertibility=False
+    )
     res = model.fit(disp=False)
 
     # ز) پیش‌بینی یک قدم جلو
     pred = res.get_forecast(steps=1, exog=test_x)
     y_pred = pred.predicted_mean.iloc[0]
     y_true = test_s.iloc[0]
-    rmse = mean_squared_error([y_true],[y_pred], squared=False)
+
+    # محاسبه RMSE بدون آرگومان مربعشده
+    mse = mean_squared_error([y_true], [y_pred])
+    rmse = math.sqrt(mse)
 
     # ح) چاپ نتایج
     print(f"True value (last day):    {y_true:,.2f}")
@@ -94,7 +108,7 @@ def main():
 
     # ط) رسم نمودار
     recent = series[-30:]
-    plt.figure(figsize=(10,5))
+    plt.figure(figsize=(10, 5))
     plt.plot(recent.index, recent.values, label='Historical Price')
     plt.scatter(test_s.index, [y_pred], color='red', label='Forecast Tomorrow')
     plt.title('USD Azad Price & Tomorrow Forecast')
@@ -108,4 +122,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
