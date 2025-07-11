@@ -4,4 +4,5 @@ statsmodels>=0.13
 scikit-learn>=1.0
 requests>=2.25
 pytrends>=4.9
-
+python‑bidi>=0.4.2
+arabic-reshaper>=2.1.0
