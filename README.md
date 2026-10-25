@@ -1,7 +1,6 @@
 # exchange_rates_USD
 در این پروژه، اطلاعات مربوط به نرخ‌های ارز از وب‌سایت tgju.org استخراج شده و روند تغییرات آن‌ها در دوره‌های مختلف ریاست‌جمهوری ایران به‌صورت گرافیکی نمایش داده شده است.
 ضمن اینکه امکان دانلود داده های تاریخی روزانه هم برای شما فراهم است.
-![USD Forecast Chart](./forecast.png)
 ![sample trend](smple_trend_exchange_rate.png)
 ![sample trend](smple_trend_exchange_rate_p.png)
 ![sample trend](smple_trend_exchange_rate_d.png)
